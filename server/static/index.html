@@ -96,6 +96,7 @@
   </div>
 
   <script>
+    const BASE     = window.location.origin;
     const statusEl = document.getElementById('status');
     const btnSend  = document.getElementById('btnSend');
 
@@ -108,7 +109,7 @@
       statusEl.textContent = '正在发送...';
 
       try {
-        const res = await fetch('/api/send', {
+        const res = await fetch(`${BASE}/api/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ count, interval_ms }),
@@ -128,7 +129,7 @@
 
     async function refreshClients() {
       try {
-        const res  = await fetch('/api/clients');
+        const res  = await fetch(`${BASE}/api/clients`);
         const list = await res.json();
         const ul   = document.getElementById('client-list');
         const badge = document.getElementById('count-badge');
