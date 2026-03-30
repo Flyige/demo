@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LAN Server</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px;
+    }
+    h1 { font-size: 1.8rem; font-weight: 700; color: #38bdf8; margin-bottom: 8px; }
+    .subtitle { color: #94a3b8; font-size: 0.9rem; margin-bottom: 32px; }
+
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 24px;
+      width: 100%;
+      max-width: 640px;
+      margin-bottom: 20px;
+    }
+    .card h2 { font-size: 1rem; color: #94a3b8; text-transform: uppercase;
+               letter-spacing: .05em; margin-bottom: 16px; }
+
+    /* controls */
+    .controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+    label { font-size: 0.8rem; color: #94a3b8; display: block; margin-bottom: 4px; }
+    input[type=number] {
+      width: 90px; padding: 6px 10px; border-radius: 6px;
+      border: 1px solid #475569; background: #0f172a; color: #e2e8f0;
+      font-size: 0.9rem;
+    }
+    button {
+      padding: 8px 20px; border-radius: 8px; border: none; cursor: pointer;
+      font-size: 0.9rem; font-weight: 600; transition: opacity .15s;
+    }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-send { background: #0ea5e9; color: #fff; }
+    .btn-send:hover:not(:disabled) { background: #38bdf8; }
+    .btn-refresh { background: #334155; color: #e2e8f0; }
+    .btn-refresh:hover { background: #475569; }
+
+    /* status */
+    #status {
+      margin-top: 12px; font-size: 0.85rem; min-height: 1.2em;
+      color: #4ade80;
+    }
+    #status.error { color: #f87171; }
+
+    /* client list */
+    #client-list { list-style: none; }
+    #client-list li {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-radius: 6px; margin-bottom: 6px;
+      background: #0f172a; font-size: 0.85rem;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; flex-shrink: 0; }
+    .sn  { color: #38bdf8; font-family: monospace; }
+    .cid { color: #475569; font-family: monospace; font-size: 0.75rem; }
+    #empty { color: #475569; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>LAN Server</h1>
+  <p class="subtitle">WebSocket 广播控制台 · 端口 9527</p>
+
+  <div class="card">
+    <h2>发送测试数据</h2>
+    <div class="controls">
+      <div>
+        <label for="count">发送次数</label>
+        <input type="number" id="count" value="10" min="1" max="9999" />
+      </div>
+      <div>
+        <label for="interval">间隔 (ms)</label>
+        <input type="number" id="interval" value="500" min="100" max="10000" step="100" />
+      </div>
+      <button class="btn-send" id="btnSend" onclick="sendTest()">▶ 开始发送</button>
+    </div>
+    <p id="status"></p>
+  </div>
+
+  <div class="card">
+    <h2>在线设备 <span id="count-badge" style="color:#38bdf8"></span></h2>
+    <button class="btn-refresh" onclick="refreshClients()" style="margin-bottom:14px;">刷新</button>
+    <ul id="client-list"><li id="empty">暂无连接的设备</li></ul>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const btnSend  = document.getElementById('btnSend');
+
+    async function sendTest() {
+      const count       = parseInt(document.getElementById('count').value)    || 10;
+      const interval_ms = parseInt(document.getElementById('interval').value) || 500;
+
+      btnSend.disabled = true;
+      statusEl.className = '';
+      statusEl.textContent = '正在发送...';
+
+      try {
+        const res = await fetch('/api/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ count, interval_ms }),
+        });
+        const data = await res.json();
+        statusEl.textContent =
+          `已触发广播：共 ${data.count} 条，间隔 ${data.interval_ms} ms`;
+      } catch (e) {
+        statusEl.className = 'error';
+        statusEl.textContent = '发送失败：' + e.message;
+      } finally {
+        // 等待广播完成后再解锁按钮
+        const totalMs = count * interval_ms + 500;
+        setTimeout(() => { btnSend.disabled = false; }, totalMs);
+      }
+    }
+
+    async function refreshClients() {
+      try {
+        const res  = await fetch('/api/clients');
+        const list = await res.json();
+        const ul   = document.getElementById('client-list');
+        const badge = document.getElementById('count-badge');
+
+        badge.textContent = list.length ? `(${list.length})` : '';
+
+        if (!list.length) {
+          ul.innerHTML = '<li id="empty" style="color:#475569;font-size:.85rem">暂无连接的设备</li>';
+          return;
+        }
+        ul.innerHTML = list.map(c => `
+          <li>
+            <span class="dot"></span>
+            <span class="sn">${escHtml(c.sn)}</span>
+            <span class="cid">${escHtml(c.id.slice(0,8))}…</span>
+          </li>`).join('');
+      } catch (e) {
+        console.error('refresh failed', e);
+      }
+    }
+
+    function escHtml(s) {
+      return s.replace(/[&<>"']/g, c =>
+        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    // 每 3 秒自动刷新设备列表
+    refreshClients();
+    setInterval(refreshClients, 3000);
+  </script>
+</body>
+</html>

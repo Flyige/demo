@@ -1,0 +1,16 @@
+# Rust
+server/target/
+
+# Android
+client/.gradle/
+client/local.properties
+client/app/build/
+client/build/
+*.iml
+.idea/
+*.keystore
+!debug.keystore
+
+# OS
+.DS_Store
+Thumbs.db

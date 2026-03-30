@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_dark">#0F172A</color>
+    <color name="bg_card">#1E293B</color>
+    <color name="accent">#38BDF8</color>
+    <color name="connected">#4ADE80</color>
+    <color name="disconnected">#F87171</color>
+    <color name="divider">#334155</color>
+    <color name="label">#94A3B8</color>
+    <color name="msg_text">#E2E8F0</color>
+</resources>
