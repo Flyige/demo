@@ -96,7 +96,19 @@
   </div>
 
   <script>
-    const BASE     = window.location.origin;
+    // 必须通过 http://IP:9527 访问，file:// 下 origin 为 "null"
+    const BASE = (window.location.origin && window.location.origin !== 'null')
+      ? window.location.origin
+      : null;
+
+    if (!BASE) {
+      document.body.innerHTML =
+        '<div style="color:#f87171;padding:40px;font-family:monospace;font-size:1rem">' +
+        '⚠️ 请通过服务器地址访问本页面，例如：<br><br>' +
+        '<b>http://&lt;服务器IP&gt;:9527</b></div>';
+      throw new Error('opened as file://');
+    }
+
     const statusEl = document.getElementById('status');
     const btnSend  = document.getElementById('btnSend');
 

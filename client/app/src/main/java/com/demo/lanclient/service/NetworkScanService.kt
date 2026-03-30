@@ -6,7 +6,8 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.net.wifi.WifiManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.demo.lanclient.R
@@ -119,16 +120,16 @@ class NetworkScanService : Service() {
     }
 
     private fun getLocalIpAddress(): String? {
-        val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        val ip = wm.connectionInfo.ipAddress
-        if (ip == 0) return null
-        return String.format(
-            "%d.%d.%d.%d",
-            ip and 0xff,
-            ip shr 8 and 0xff,
-            ip shr 16 and 0xff,
-            ip shr 24 and 0xff
-        )
+        val cm = applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = cm.activeNetwork ?: return null
+        // 确认是 WiFi 网络
+        val caps = cm.getNetworkCapabilities(network) ?: return null
+        if (!caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return null
+        val props = cm.getLinkProperties(network) ?: return null
+        return props.linkAddresses
+            .mapNotNull { it.address as? java.net.Inet4Address }
+            .firstOrNull { !it.isLoopbackAddress }
+            ?.hostAddress
     }
 
     // ── Notification ──────────────────────────────────────
