@@ -45,6 +45,9 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.7.0'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
 
+    // activity-ktx provides by viewModels() delegate
+    implementation 'androidx.activity:activity-ktx:1.8.2'
+
     // Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 

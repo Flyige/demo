@@ -11,11 +11,14 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.demo.lanclient.R
 import com.demo.lanclient.network.WebSocketManager
-import com.demo.lanclient.network.WsState
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -25,15 +28,14 @@ import java.net.Socket
 class NetworkScanService : Service() {
 
     companion object {
-        const val CHANNEL_ID      = "lan_scan_channel"
-        const val NOTIFICATION_ID = 1001
-        const val SERVER_PORT     = 9527
-        const val SCAN_INTERVAL_MS = 15_000L   // 未连接时每 15 s 扫一次
+        const val CHANNEL_ID       = "lan_scan_channel"
+        const val NOTIFICATION_ID  = 1001
+        const val SERVER_PORT      = 9527
+        const val SCAN_INTERVAL_MS = 15_000L
         const val SOCKET_TIMEOUT_MS = 500
 
         const val EXTRA_DEVICE_SN = "device_sn"
 
-        /** 供外部获取单例 WebSocketManager */
         @Volatile
         var wsManager: WebSocketManager? = null
             private set
@@ -68,8 +70,7 @@ class NetworkScanService : Service() {
                     if (serverIp != null) {
                         updateNotification("连接到 $serverIp...")
                         manager.connect(serverIp, SERVER_PORT)
-                        // 等待连接结果
-                        delay(2000)
+                        delay(2_000)
                         if (manager.isConnected()) {
                             updateNotification("已连接：$serverIp")
                         }
@@ -83,45 +84,38 @@ class NetworkScanService : Service() {
     }
 
     /**
-     * 获取本机所在子网，并发扫描所有主机的 SERVER_PORT。
-     * 返回第一个响应的 IP，或 null。
+     * 并发扫描本机子网所有主机的 SERVER_PORT。
+     * 使用 CompletableDeferred 在找到第一个响应后立即返回结果。
      */
-    private suspend fun scanForServer(): String? = withContext(Dispatchers.IO) {
-        val localIp = getLocalIpAddress() ?: return@withContext null
-        val prefix   = localIp.substringBeforeLast(".")   // e.g. "192.168.1"
+    private suspend fun scanForServer(): String? = coroutineScope {
+        val localIp = getLocalIpAddress() ?: return@coroutineScope null
+        val prefix  = localIp.substringBeforeLast(".")
 
-        // 并发扫描 1-254
-        val results = (1..254).map { host ->
-            scope.launch {
-                val ip = "$prefix.$host"
-                if (ip == localIp) return@launch
-                try {
-                    Socket().use { sock ->
-                        sock.connect(InetSocketAddress(ip, SERVER_PORT), SOCKET_TIMEOUT_MS)
-                        // 有响应说明端口开放
+        val found = CompletableDeferred<String?>()
+
+        val scanJob = launch(Dispatchers.IO) {
+            (1..254).map { host ->
+                async {
+                    val ip = "$prefix.$host"
+                    if (ip == localIp) return@async
+                    try {
+                        Socket().use { sock ->
+                            sock.connect(InetSocketAddress(ip, SERVER_PORT), SOCKET_TIMEOUT_MS)
+                        }
+                        // 端口可达，尝试完成 Deferred（仅第一个成功的会生效）
+                        found.complete(ip)
+                    } catch (_: Exception) {
+                        // 超时或拒绝，忽略
                     }
-                    // 找到后通知父协程
-                    throw FoundException(ip)
-                } catch (_: FoundException) {
-                    throw it   // re-throw
-                } catch (_: Exception) {
-                    // 超时或拒绝，忽略
                 }
-            }
+            }.awaitAll()
+            // 所有主机扫描完毕仍未找到
+            found.complete(null)
         }
 
-        var found: String? = null
-        for (job in results) {
-            try {
-                job.join()
-            } catch (e: FoundException) {
-                found = e.ip
-                // 取消其余扫描
-                results.forEach { it.cancel() }
-                break
-            }
-        }
-        found
+        val result = found.await()
+        scanJob.cancel()
+        result
     }
 
     private fun getLocalIpAddress(): String? {
@@ -158,8 +152,8 @@ class NetworkScanService : Service() {
             .build()
 
     private fun updateNotification(text: String) {
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.notify(NOTIFICATION_ID, buildNotification(text))
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIFICATION_ID, buildNotification(text))
     }
 
     override fun onDestroy() {
@@ -169,7 +163,4 @@ class NetworkScanService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-
-    /** 用于在协程中跨 launch 边界传递"已找到"结果 */
-    private class FoundException(val ip: String) : Exception(ip)
 }
